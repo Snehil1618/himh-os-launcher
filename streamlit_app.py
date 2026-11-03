@@ -9,8 +9,10 @@ import streamlit as st
 # 1. Bridge Streamlit Cloud Secrets into Environment Variables
 # -----------------------------------------------------------------------------
 for key, val in st.secrets.items():
-    if isinstance(val, (str, int, float, bool)) and key not in os.environ:
-        os.environ[key] = str(val)
+    if isinstance(val, (str, int, float, bool)):
+        str_val = str(val).strip()
+        os.environ[key] = str_val
+        os.environ[key.upper()] = str_val
 
 LAUNCHER_ROOT = os.path.dirname(os.path.abspath(__file__))
 CORE_DIR = os.path.join(LAUNCHER_ROOT, "private_core")
