@@ -30,8 +30,18 @@ def sync_private_core(repo_url: str, token: str) -> bool:
     if not clean_repo.endswith(".git"):
         clean_repo += ".git"
 
-    # Use x-access-token to supply both username and password non-interactively
-    clone_url = f"https://x-access-token:{token_clean}@{clean_repo}"
+    # Extract GitHub username from repo URL (e.g. github.com/Snehil1618/himh-os-private.git -> Snehil1618)
+    parts = clean_repo.split("/")
+    if len(parts) >= 3 and "github.com" in parts[0]:
+        user = parts[1]
+    elif len(parts) == 2:
+        user = parts[0]
+        clean_repo = f"github.com/{clean_repo}"
+    else:
+        user = "oauth2"
+
+    # Use https://USERNAME:TOKEN@github.com/... (Standard GitHub HTTPS auth)
+    clone_url = f"https://{user}:{token_clean}@{clean_repo}"
 
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
@@ -50,7 +60,7 @@ def sync_private_core(repo_url: str, token: str) -> bool:
         except subprocess.CalledProcessError as err:
             st.warning(f"Git pull notice: {err.stderr}")
     else:
-        # If directory exists but has no valid .git (e.g. aborted clone), remove it
+        # If directory exists but has no valid .git, clean it before cloning
         if os.path.exists(CORE_DIR):
             shutil.rmtree(CORE_DIR, ignore_errors=True)
 
@@ -63,10 +73,32 @@ def sync_private_core(repo_url: str, token: str) -> bool:
                 env=env
             )
         except subprocess.CalledProcessError as err:
-            safe_err = err.stderr.replace(token_clean, "[TOKEN_REDACTED]") if token_clean else err.stderr
-            st.error(f"Git Clone Failed: {safe_err}")
-            st.info("Check that GITHUB_READ_TOKEN has repo read permissions and PRIVATE_REPO_URL is 'github.com/Snehil1618/himh-os-private.git'")
-            st.stop()
+            # Fallback attempt: try cloning with token directly if username:token failed
+            fallback_url = f"https://{token_clean}@{clean_repo}"
+            try:
+                subprocess.run(
+                    ["git", "clone", "--depth", "1", fallback_url, CORE_DIR],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    env=env
+                )
+            except subprocess.CalledProcessError as fallback_err:
+                safe_err = fallback_err.stderr.replace(token_clean, "[TOKEN_REDACTED]") if token_clean else fallback_err.stderr
+                st.error(f"Git Clone Failed: {safe_err}")
+                st.markdown(f"""
+                **Troubleshooting Authentication:**
+                - Target Repository: `{clean_repo}`
+                - Authenticated User: `{user}`
+                - Token format detected: `{token_clean[:4]}...` (Length: {len(token_clean)} chars)
+                
+                Please ensure your token was generated at [github.com/settings/tokens](https://github.com/settings/tokens) with the **`repo`** scope checked, and that your Streamlit Cloud secret is saved as:
+                ```toml
+                GITHUB_READ_TOKEN = "ghp_..."
+                PRIVATE_REPO_URL = "github.com/{user}/himh-os-private.git"
+                ```
+                """)
+                st.stop()
 
     return True
 
