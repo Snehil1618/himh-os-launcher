@@ -59,8 +59,14 @@ def sync_private_core(repo_url: str, token: str) -> bool:
                 text=True,
                 env=env
             )
-        except subprocess.CalledProcessError as err:
-            st.warning(f"Git pull notice: {err.stderr}")
+        except subprocess.CalledProcessError:
+            # If fast-forward fails (e.g. after history rewrite or force-push), reset to origin/main or re-clone
+            try:
+                subprocess.run(["git", "-C", CORE_DIR, "fetch", "origin", "main"], check=True, capture_output=True, text=True, env=env)
+                subprocess.run(["git", "-C", CORE_DIR, "reset", "--hard", "origin/main"], check=True, capture_output=True, text=True, env=env)
+            except Exception:
+                shutil.rmtree(CORE_DIR, ignore_errors=True)
+                subprocess.run(["git", "clone", "--depth", "1", clone_url, CORE_DIR], check=True, capture_output=True, text=True, env=env)
     else:
         # If directory exists but has no valid .git, clean it before cloning
         if os.path.exists(CORE_DIR):
